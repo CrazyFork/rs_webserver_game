@@ -7,12 +7,14 @@ use iron::prelude::*;
 use iron::status;
 use router::Router;
 use std::str::FromStr;
+use std::io::Read;
 use urlencoded::UrlEncodedBody;
+use urlencoded::UrlEncodedQuery;
 
 fn main() {
     let mut router = Router::new();
     router.get("/", start_game);
-    router.post("/:cpu/:user", post_move);
+    router.post("/*", post_move);
 
     println!("Serving from localhost:3000");
     Iron::new(router).http("localhost:3000").unwrap();
@@ -24,9 +26,10 @@ fn start_game(request: &mut Request) -> IronResult<Response> {
 
     response.set_mut(status::Ok);
     response.set_mut(mime!(Text/Html; Charset=Utf8));
+    //TODO: Need to set a unique user ID
     response.set_mut(r#"
         <title>Tic Tac Toe</title>
-        <form action="/cpu/user" method="post">
+        <form action="/game/?id=22" method="post">
             <input type="submit" name="start_game" value="Start Game"/>
         </form>
     "#);
@@ -34,11 +37,12 @@ fn start_game(request: &mut Request) -> IronResult<Response> {
 }
 
 fn post_move(req: &mut Request) -> IronResult<Response> {
+    println!("Success?");
     let mut response = Response::new();
-
     let input_map;
     match req.get_ref::<UrlEncodedBody>() {
-        Err(e) => {
+        Err(ref e) => {
+            println!("{:?}", e);
             response.set_mut(status::BadRequest);
             response.set_mut(format!("Error parsing form data: {:?}\n", e));
             return Ok(response);
@@ -46,21 +50,17 @@ fn post_move(req: &mut Request) -> IronResult<Response> {
         Ok(map) => { input_map = map; }
     }
 
-    let content = format!(r#"
-        <title>Tic Tac Toe</title>
-        <form action="/cpu:{}/user:{}" method="post">
-            <input type="text" name="place"/>
-            <button type="submit">Make move</button>
-        </form>
-    "#, 4, 5);
-
     //
     let user_move;
     match input_map.get("place") {
         None => {
-            response.set_mut(status::Ok);
             response.set_mut(mime!(Text/Html; Charset=Utf8));
-            response.set_mut(content);
+            response.set_mut(r#"
+                <title>Tic Tac Toe</title>
+                <form action="/game/?id=22&X=4&O=3" method="post" enctype='text/plain'>
+                    <input type="submit" name="make_move" value="Move"/>
+                </form>
+            "#);
             return Ok(response);
         }
         Some(_move) => { user_move = _move}
@@ -68,7 +68,28 @@ fn post_move(req: &mut Request) -> IronResult<Response> {
 
     response.set_mut(status::Ok);
     response.set_mut(mime!(Text/Html; Charset=Utf8));
-    response.set_mut(content);
+    response.set_mut(r#"
+        <title>Tic Tac Toe</title>
+        <form action="/game/?id=22&X=4&O=3" method="post" enctype='text/plain'>
+            <input type="submit" name="make_move" value="Move"/>
+        </form>
+    "#);
+    Ok(response)
+}
+fn make_board(req: &mut Request) -> IronResult<Response> {
+    let mut response = Response::new();
+    let url_data;
+    match req.get_ref::<UrlEncodedQuery>() {
+        Err(ref e) => {
+            println!("{:?}", e);
+            response.set_mut(status::BadRequest);
+            response.set_mut(format!("Error parsing url params: {:?}\n", e));
+            return Ok(response);
+        }
+        Ok(ref map) => { url_data = map.clone(); }
+    }
+    response.set_mut(status::Ok);
+    response.set_mut(mime!(Text/Html; Charset=Utf8));
     Ok(response)
 }
 
