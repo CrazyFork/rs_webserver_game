@@ -43,7 +43,6 @@ fn post_move(req: &mut Request) -> IronResult<Response> {
     let user_move;
     match map.find(&["place"]) {
         None => {
-            response.set_mut(status::Ok);
             response.set_mut(mime!(Text/Html; Charset=Utf8));
             response.set_mut(r#"
             <title>Tic Tac Toe</title>
@@ -75,60 +74,3 @@ fn end_game(request: &mut Request) -> IronResult<Response> {
     let mut response = Response::new();
     Ok(response)
 }
-
-/*// The Dump -- Notes and testing stuff
-fn main() {
-    let mut args = env::args(); // args is an iter
-
-    let address = match args.nth(1) {
-        Some(s) => s.parse::<SocketAddr>().unwrap(),
-        None => { println!("Usage: game_server <ip>:<port>");
-                  return },
-    };
-
-    let listener = TcpListener::bind(address).unwrap();
-    println!("Game server listens on : {:?}", address);
-    // accept connections and process them serially
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                // closure that calls a func to operate on the stream
-                spawn(|| handle_client(stream));
-            }
-            Err(e) => { println!("Bad connection: {:?}", e); }
-        }
-    }
-}
-fn ok() -> Vec<u8> {
-    return String::from("HTTP/1.1 200 OK\r\n").into_bytes()
-}
-fn mime_text() -> Vec<u8> {
-    return String::from("Content-Type: text/html; charset=utf-8\r\n").into_bytes()
-}
-// Take stream and convert to 
-fn handle_client(mut stream: TcpStream) {
-    println!("Handling incoming connection");
-    //stream.set_read_timeout(None).expect("set_read_timeout call failed");
-    //stream.set_write_timeout(None).expect("set_write_timeout call failed");
-    stream.set_ttl(100).expect("set_ttl call failed");
-
-    let mut buffer = String::new();
-    //let mut buf: Buf = [0u8, ..10240]; // big enough?
-    for byte in Read::by_ref(&mut stream).bytes() {
-        let c = byte.unwrap() as char;
-        buffer.push(c);
-        if buffer.ends_with("\r\n\r\n") { break }
-    }
-    println!("Buffer = {:?}", buffer);
-    stream.write_all(&ok()).unwrap();
-    stream.write_all(&mime_text()).unwrap();
-    let test = (r#"
-        <title>Tic Tac Toe</title>
-        <form action="/game?id=22&cpu=1,3&user=2,7" method="post" enctype='text/plain'>
-            <input type="text" name="place"/>
-            <button type="submit">Move</button>
-        </form>
-    "#).as_bytes();
-    stream.write_all(test).unwrap();
-}
-//*/
