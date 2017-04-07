@@ -1,76 +1,42 @@
-extern crate iron;
-extern crate router;
-extern crate params;
-#[macro_use] extern crate mime;
-
-use iron::prelude::*;
-use iron::status;
-use router::Router;
 use std::str::FromStr;
 use std::io::Read;
-use params::{Params, Value};
 
 fn main() {
-    let mut html_router = Router::new();
-    html_router.get("/", start_game, "start");
-    html_router.post("/game", post_move, "move");
-    println!("Serving HTML from localhost:3000");
-    Iron::new(html_router).http("localhost:3000").unwrap();
-}
+    let mut args = env::args(); // args is an iter
 
-#[allow(unused_variables)]
-fn start_game(request: &mut Request) -> IronResult<Response> {
-    let mut response = Response::new();
+    let web_address = match args.nth(1) {
+        Some(s) => s,
+        None => { println!("Usage: web_server <web_ip>:<port> <game_ip>:<port>"); return },
+    };
+    let game_address = match args.nth(2) {
+        Some(s) => s,
+        None => { println!("Usage: web_server <web_ip>:<port> <game_ip>:<port>"); return },
+    };
+    let listener = TcpListener::bind(web_address).unwrap();
 
-    response.set_mut(status::Ok);
-    response.set_mut(mime!(Text/Html; Charset=Utf8));
-    //TODO: Need to set a unique user ID
-    response.set_mut(r#"
-        <title>Tic Tac Toe</title>
-        <form action="/game?id=22" method="post">
-            <input type="submit" name="start_game" value="Start Game"/>
-        </form>
-    "#);
-    Ok(response)
-}
-
-fn post_move(req: &mut Request) -> IronResult<Response> {
-    let mut response = Response::new();
-    // params crate puts UrlEncodedBody and UrlParameters in same map. Convienient!
-    let map = req.get_ref::<Params>().unwrap();
-    println!("params = {:?}", map);
-
-    let user_move;
-    match map.find(&["place"]) {
-        None => {
-            response.set_mut(mime!(Text/Html; Charset=Utf8));
-            response.set_mut(r#"
-            <title>Tic Tac Toe</title>
-            <form action="/game?id=22" method="post" enctype='text/plain'>
-                <input type="text" name="place"/>
-                <button type="submit">Move</button>
-            </form>
-            "#);
-            return Ok(response);
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                // closure that calls a func to operate on the stream
+                // for each client stream, we will need to read the stream, parse to
+                // json, and connect to the game server to do updates and get game board
+                spawn(|| handle_client(stream));
+            }
+            Err(e) => { println!("Bad connection: {:?}", e); }
         }
-        Some(_move) => { user_move = _move}
     }
-    println!("user move = {:?}", user_move);
-
-    response.set_mut(status::Ok);
-    // Mime crate makes creation of mime types fast and simple with a macro
-    response.set_mut(mime!(Text/Html; Charset=Utf8));
-    response.set_mut(r#"
-        <title>Tic Tac Toe</title>
-        <form action="/game?id=22&cpu=1,3&user=2,7" method="post" enctype='text/plain'>
-            <input type="text" name="place"/>
-            <button type="submit">Move</button>
-        </form>
-    "#);
-    Ok(response)
 }
 
-fn end_game(request: &mut Request) -> IronResult<Response> {
-    let mut response = Response::new();
-    Ok(response)
+fn handle_client(mut stream: TcpStream, mut game: Arc<TicTacGame>) {
+    //stream.set_read_timeout(None).expect("set_read_timeout call failed");
+    //stream.set_write_timeout(None).expect("set_write_timeout call failed");
+    stream.set_ttl(100).expect("set_ttl call failed");
+    
+    let mut buffer = String::new();
+    for byte in Read::by_ref(&mut stream).bytes() {
+        let c = byte.unwrap() as char;
+        buffer.push(c);
+        if buffer.ends_with("\r\n\r\n") { break }
+    }
+    for line in buffer.lines() { println!("{:?}", line)}
 }

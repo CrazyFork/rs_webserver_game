@@ -12,8 +12,4 @@ name = "game_server"
 path = "src/game/main.rs"
 
 [dependencies]
-iron = "0.5.*"
-mime = "0.2.*"
-router = "0.5.*"
-params = "0.6.*"
 rustc-serialize = "*"
