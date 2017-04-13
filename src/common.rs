@@ -19,7 +19,7 @@ pub struct UserData {
     pub new_game: bool,
 }
 
-struct Request {
+pub struct Request {
     method : String,
     url    : String,
     headers: HashMap<String, String>,
@@ -46,40 +46,42 @@ impl ToString for Response {
         string
     }
 }
-fn parse_stream(stream: &TcpStream) -> Request {
-        Request {
-                method: String::from("GET"),
-                url: String::from("/"),
-                headers: HashMap::new(),
-                body: None,
+pub fn parse_stream(stream: &TcpStream) -> Request {
+    Request {
+            method: String::from("GET"),
+            url: String::from("/"),
+            headers: HashMap::new(),
+            body: None,
+    }
+/*     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
+    //stream.set_write_timeout(None).expect("set_write_timeout call failed");
+    stream.set_ttl(100).expect("set_ttl call failed");
+    
+    let mut header = String::new();
+    let mut content = String::new();
+    let mut content_len = 0;
+    let mut char_count = 0;
+    let mut head = true;
+    for byte in Read::by_ref(&mut stream).bytes() {
+        let c = byte.unwrap() as char;
+        if head {
+            header.push(c);
+        } else if char_count < content_len {
+            char_count += 1;
+            content.push(c);
+        } else {
+            break;
+        }
+        if header.ends_with("\r\n\r\n") && head {
+            head = false;
         }
     }
+    for line in header.lines() { println!("{:?}", line)}
+    for line in content.lines() { println!("{:?}", line)}
+*/
+}
 
 type Handler = Box<Fn(&Request) -> Response>;
-/// The server stores a Handler function (callback or closure)
-/// which takes a Request and produces a Response.
-/// The server parses the incoming connections to a Request
-/// and shunts this off to the Handler - the returned Response
-/// is then sent to the client
-pub fn start_server(addr: String) -> JoinHandle<()> {
-    // Spawn a thread to handle incoming streams so we aren't blocking
-    // TODO: Return JoinHandle in a Result
-    spawn( || {
-        let listener = TcpListener::bind(addr).unwrap();
-        for stream in listener.incoming().by_ref() {
-            match stream {
-                Ok(mut stream) => {
-                    spawn( move || {
-                        let request = parse_stream(&stream);
-                        let response = connection_error();// UrlMap(request);
-                        stream.write_all(response.to_string().as_bytes()).unwrap();
-                    });
-                }
-                Err(e) => { println!("Bad connection: {:?}", e); }
-            }
-        }
-    })
-}
 
 /// The UrlMap stores callbacks for urls in a HashMap.
 /// A callback must take a reference to a Request struct
