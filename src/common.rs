@@ -59,20 +59,19 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
         match state {
             // Method
             0 => {
-                if c == ' ' {
-                    method_state += 1;
-                } else if c == '\r' {
-                    method_state = 2;
-                }
                 match method_state {
-                    0 => method.push(c),
-                    1 => url.push(c),
-                    // Going to skip getting the HTTP version for now
-                    _ => {
-                        if buffer[n+1] as char == '\n' {
-                            state = 1;
-                        }
+                    0 => { if c != ' ' { method.push(c); }
+                            else { method_state = 1; }
                     },
+                    1 => { if c != ' ' { url.push(c); }
+                            else { method_state = 2; }
+                    },
+                    2 => { if c == '\r' { method_state = 3; }
+                    }, // Ignore HTTP version for now
+                    3 => { if c == '\n' { state = 1; }
+                            else { return Err("Method parse failed"); }
+                    },
+                    _ => {},
                 }
             }
             // Headers
@@ -80,31 +79,30 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
                 if c == ' ' {
                     headers_state = 1;
                 } else if c == '\r' {
-                    headers_state = 3;
+                    headers_state = 4;
                 }
                 match headers_state {
                     // Start of line
                     0 => key.push(c),
                     // Space encountered
-                    1 => {
-                        key.pop(); // remove the ':'
-                        headers_state = 2; }
+                    1 => { key.pop(); // remove the ':' and ignore space
+                           headers_state = 2; }
                     // Get key value
                     2 => val.push(c),
+                    3 => headers_state = 0, // ignore '/n' value
                     // Save the key/val pair
-                    3 => {
+                    4 => {
                         if buffer[n+1] as char == '\n' {
-                            if buffer[n+1] as char == '\r' && buffer[n+2] as char == '\n' {
+                            if buffer[n+2] as char == '\r' && buffer[n+3] as char == '\n' {
                                 state = 3;
                             } else {
-                                headers_state = 0;
+                                headers_state = 3;
                             }
                         } else {
                             return Err("Malformed header")
                         }
-                        if key.len() <= 0 && val.len() <= 0 {
-                            return Err("Malformed header: zero length key or value")
-                        }
+                        println!("{:?}", key);
+                        println!("{:?}", val);
                         headers.insert(key, val);
                         key = String::new();
                         val = String::new();
@@ -132,6 +130,9 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     // Unless the stream or something else errored out, Request should be guaranteed
     println!("Method = {:?}", method);
     println!("url = {:?}", url);
+    for (key,val) in &headers {
+        println!("{:?}: {:?}",key,val);
+    }
     Ok(Request {
         method: method,
         url: url,
