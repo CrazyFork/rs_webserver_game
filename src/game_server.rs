@@ -14,11 +14,11 @@ use std::net::{TcpListener, TcpStream};
 fn main() {
     let mut args = env::args(); // args is an iter
 
-    let address = match args.nth(1) {
+    /*let address = match args.nth(1) {
         Some(s) => s,
         None => { println!("Usage: game_server <ip>:<port>"); return },
-    };
-    let listener = TcpListener::bind(address).unwrap();
+    };*/
+    let listener = TcpListener::bind("127.0.0.1:3001").unwrap();
 
     let tictac_data = Arc::new(TicTacGame::new());
 
@@ -61,16 +61,21 @@ impl TicTacGame {
             Ok(o) => Ok(o),
         }
     }
-    fn insert_move(&self, user_id: u32, place: i32, piece: char) -> Result<bool, String> {
+    fn insert_move(&self, user_id: u32, place: char, piece: char) -> Result<bool, String> {
         let mut guard = self.data.lock().unwrap(); // critical section begins
         let mut board = match guard.board.get_mut(&user_id) {
             Some(x) => x,
             None => return Err(format!("Game for user {:?} does not exist", user_id)),
         };
-        let x = place % 3;
-        let y = place / 3;
-        board[y as usize][x as usize] = piece;
-        return Ok(true)
+        let x = place as i32 % 3;
+        let y = place as i32 / 3;
+        let pos = board[y as usize][x as usize];
+        if pos == place {
+            board[y as usize][x as usize] = piece;
+            return Ok(true)
+        } else {
+            return Err(String::from("Illegal move"))
+        }
     } 
 }
 
@@ -80,7 +85,7 @@ fn write_error(mut stream: TcpStream, msg: String) {
 }
 
 /// Take stream and convert from JSON, perform logic, send JSON back
-/// A new game can be started by recieving;
+/// A new game can be started by receiving;
 /// {"user_id":"number", "move_to":"-1", "new_game":true } 
 fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
@@ -98,27 +103,25 @@ fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
     // decode the buffer from JSON to the UserData struct
     let user_data: UserData;
     match json::decode(&buffer) {
-        Err(e) => { let msg = format!("Invalid JSON recieved: {:?}", e);
+        Err(e) => { let msg = format!("Invalid JSON received: {:?}", e);
                     write_error(stream, msg); return
                   },
         Ok(o) => user_data = o,
     }
-    
+
     if user_data.new_game {
         game.new_game(user_data.user_id)
     }
-    if user_data.move_to >= 0 && user_data.move_to <= 8 {
-        match game.insert_move(user_data.user_id, user_data.move_to, 'X') {
-            Err(e) => { let msg = format!("User {:?} does not exist: {:?}", user_data.user_id, e);
-                        write_error(stream, msg); return
-                      },
-            Ok(_) => {}, // ignore the success value, we only care about error
-        }
+    match game.insert_move(user_data.user_id, user_data.move_to, 'X') {
+        Ok(_) => {},
+        Err(e) => { let msg = format!("User {:?}: {:?}", user_data.user_id, e);
+                    write_error(stream, msg); return
+                  },
     }
-    
+
     println!("JSON = {:?}", game.get_json(user_data.user_id));
     match game.get_json(user_data.user_id) {
-        Err(e) => { let msg = format!("Could not fetch JSON for user {:?}: {:?}", user_data.user_id, e);
+        Err(e) => { let msg = format!("User {:?}: {:?}", user_data.user_id, e);
                     write_error(stream, msg); return
                   },
         Ok(o) => stream.write_all(o.as_bytes()).unwrap(),

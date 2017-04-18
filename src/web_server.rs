@@ -16,14 +16,8 @@ fn main() {
     // Using .nth() discards all preceding elements in the iterator
     let web_address = match args.nth(1) {
         Some(s) => s,
-        None => { println!("Usage: web_server <web_ip>:<port> <game_ip>:<port>"); return },
+        None => { println!("Usage: web_server <web_ip>:<port>"); return },
     };
-    let game_address = match args.next() {
-        Some(s) => s,
-        None => { println!("Usage: web_server <web_ip>:<port> <game_ip>:<port>"); return },
-    };
-    let listener = TcpListener::bind(web_address).unwrap();
-
     let server = spawn( || {
         let listener = TcpListener::bind(web_address).unwrap();
         for stream in listener.incoming().by_ref() {
@@ -31,7 +25,7 @@ fn main() {
                 Ok(mut stream) => {
                     spawn( move || {
                         let request = parse_stream(&stream);
-                        let response = handle_tictac(&request, &game_address);
+                        let response = handle_tictac(&request);
                         stream.write_all(response.to_string().as_bytes()).unwrap();
                     });
                 }
@@ -41,7 +35,11 @@ fn main() {
     });
 }
 
-fn handle_tictac(request: &Request, game_addr: &String) -> Response {
+fn handle_tictac(request: &Request) -> Response {
     //
+    let mut stream_to_game = TcpStream::connect("127.0.0.1:3001").unwrap();
+    Response { code: 501,
+               headers: HashMap::new(),
+               body: Some("Connection Error".as_bytes().to_vec()), }
 }
 
