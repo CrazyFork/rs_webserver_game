@@ -39,7 +39,6 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     let mut url = String::new();
     let mut headers:HashMap<String,String> = HashMap::new();
     let mut body = String::new();
-    let mut body_map:HashMap<String,String> = HashMap::new();
 
     let mut state = 0;
     let mut method_state = 0;
@@ -115,16 +114,19 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             _ => {},
         }
     }
+
+    let mut body_map;
     if body.len() > 0 {
-        body_map = parse_params(&body);
+        body_map = Some(parse_params(&body));
+    } else{
+        body_map = None;
     }
-    for (key,val) in body_map { println!("{:?}: {:?}",key,val);}
 
     Ok(Request {
         method: method,
         url: url,
         headers: headers,
-        body: None,
+        body: body_map,
     })
 }
 
