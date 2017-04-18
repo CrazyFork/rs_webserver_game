@@ -2,7 +2,7 @@ extern crate rustc_serialize;
 
 use ::Msg::*;
 use std::io::{Write, Bytes};
-use std::str::FromStr;
+use std::str;
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ pub struct Request {
     pub body   : Option<HashMap<String, String>>, // TODO make enum so can use a HashMap or Vec
 }
 
-pub fn parse_stream(stream: &TcpStream) -> Request {
+pub fn parse_stream(stream: &TcpStream) -> Result<Request, &'static str> {
     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
     //stream.set_write_timeout(None).expect("set_write_timeout call failed");
     stream.set_ttl(100).expect("set_ttl call failed");
@@ -68,7 +68,7 @@ pub fn parse_stream(stream: &TcpStream) -> Request {
                         if c == '\n' && buffer[n-1] as char == '\r' {
                             state = 1;
                         } else {
-                            println!("Something wrong here [1]");
+                            return Err("Method parse failed")
                         }
                     },
                 }
@@ -91,12 +91,17 @@ pub fn parse_stream(stream: &TcpStream) -> Request {
                     2 => val.push(c),
                     // Save the key/val pair
                     3 => {
-                        if c == '\n' {
+                        if buffer[n+1] as char == '\n' {
                             if buffer[n+1] as char == '\r' && buffer[n+2] as char == '\n' {
                                 state = 3;
                             } else {
                                 headers_state = 0;
                             }
+                        } else {
+                            return Err("Malformed header")
+                        }
+                        if key.len() <= 0 && val.len() <= 0 {
+                            return Err("Malformed header: zero length key or value")
                         }
                         headers.insert(key, val);
                         key = String::new();
@@ -124,29 +129,30 @@ pub fn parse_stream(stream: &TcpStream) -> Request {
     }
 
     // Unless the stream or something else errored out, Request should be guaranteed
-    Request {
+    Ok(Request {
         method: method,
         url: url,
         headers: headers,
         body: None,
-    }
+    })
 }
 
 pub struct Response {
-    pub code   : u32,
+    pub code   : String,
     pub headers: HashMap<String, String>,
     pub body   : Option<Vec<u8>>,
 }
 impl ToString for Response {
     fn to_string(&self) -> String {
         let line_end = String::from("\r\n");
-        let header_end = String::from("\r\n\r\n");
         let mut string: String = self.code.to_string() + &line_end;
         for (key, val) in &self.headers {
             string += &(key.clone() + ": " + val + &line_end);
         }
         match self.body {
-            Some(ref b) => string += &((header_end) + &String::from_utf8(b.clone()).unwrap()),
+            Some(ref b) => {string.push_str(&line_end);
+                            string.push_str(str::from_utf8(&b).unwrap());
+                            string.push_str(&line_end)},
             None => {},
         }
         string
@@ -174,7 +180,7 @@ impl<> UrlMap {
         match self.maps.get(&request.url) {
             Some(c) => c(request),
             None => Response { // safeguard response
-                        code: 404,
+                        code: "HTTP/1.1 404 Not Found".to_string(),
                         headers: HashMap::new(),
                         body: Some("404 - Not found".as_bytes().to_vec()),
                     },
@@ -187,7 +193,7 @@ mod Msg {
     use std::collections::HashMap;
     
     pub fn connection_error() -> Response {
-        Response { code: 666,
+        Response { code: "HTTP/1.1 666".to_string(),
                    headers: HashMap::new(),
                    body: Some("Connection Error".as_bytes().to_vec()), }
     }
