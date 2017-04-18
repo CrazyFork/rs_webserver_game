@@ -1,7 +1,7 @@
 extern crate rustc_serialize;
 
 use ::Msg::*;
-use std::io::{Write, Bytes};
+use std::io::{Read, Write, Bytes};
 use std::str;
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
@@ -27,7 +27,7 @@ pub struct Request {
     pub body   : Option<HashMap<String, String>>, // TODO make enum so can use a HashMap or Vec
 }
 
-pub fn parse_stream(stream: &TcpStream) -> Result<Request, &'static str> {
+pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
     //stream.set_write_timeout(None).expect("set_write_timeout call failed");
     stream.set_ttl(100).expect("set_ttl call failed");
@@ -50,6 +50,10 @@ pub fn parse_stream(stream: &TcpStream) -> Result<Request, &'static str> {
     let mut val = String::new();
 
     // Begin state machine - run until buffer cleared
+    match stream.read(&mut buffer) {
+        Ok(len) => read_len = len,
+        Err(e) => {}
+    }
     for n in 0..read_len {
         let c = buffer[n] as char;
         match state {
@@ -65,10 +69,8 @@ pub fn parse_stream(stream: &TcpStream) -> Result<Request, &'static str> {
                     1 => url.push(c),
                     // Going to skip getting the HTTP version for now
                     _ => {
-                        if c == '\n' && buffer[n-1] as char == '\r' {
+                        if buffer[n+1] as char == '\n' {
                             state = 1;
-                        } else {
-                            return Err("Method parse failed")
                         }
                     },
                 }
@@ -127,8 +129,9 @@ pub fn parse_stream(stream: &TcpStream) -> Result<Request, &'static str> {
             _ => {},
         }
     }
-
     // Unless the stream or something else errored out, Request should be guaranteed
+    println!("Method = {:?}", method);
+    println!("url = {:?}", url);
     Ok(Request {
         method: method,
         url: url,

@@ -23,7 +23,7 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 spawn( move || {
-                    match parse_stream(&stream) {
+                    match parse_stream(&mut stream) {
                         Ok(request) => {
                             let response = handle_tictac(&request);
                             println!("Sent response: {:?}", response.to_string());
