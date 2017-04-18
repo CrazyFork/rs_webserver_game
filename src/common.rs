@@ -110,25 +110,16 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             },
             // Body state
             2 => {
-                if n == read_len {
-                    body_map = parse_params(&body);
-                } else {
                     body.push(c);
-                }
             },
             _ => {},
         }
     }
-    println!("{:?}", body);
-    // Unless the stream or something else errored out, Request should be guaranteed
-    println!("Method = {:?}", method);
-    println!("url = {:?}", url);
-    for (key,val) in &headers {
-        println!("{:?}: {:?}",key,val);
+    if body.len() > 0 {
+        body_map = parse_params(&body);
     }
-    for (key,val) in &body_map {
-        println!("{:?}: {:?}",key,val);
-    }
+    for (key,val) in body_map { println!("{:?}: {:?}",key,val);}
+
     Ok(Request {
         method: method,
         url: url,
@@ -137,10 +128,10 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     })
 }
 
-fn parse_params(string: &String) -> HashMap<String, String> {
+fn parse_params(string: &String) -> HashMap<String,String> {
     let mut map:HashMap<String,String> = HashMap::new();
     // Make an array of strings plit by '&'
-    let pairs = string.split('&');
+    let pairs:Vec<&str> = string.split('&').collect();
     // For each string, split by '=' to key/val pair
     for pair in pairs {
         let keyval:Vec<&str> = pair.split('=').collect();
