@@ -60,11 +60,11 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             // Method
             0 => {
                 match method_state {
-                    0 => { if c != ' ' { method.push(c); }
-                            else { method_state = 1; }
+                    0 => { if c == ' ' { method_state = 1; }
+                            else { method.push(c); }
                     },
-                    1 => { if c != ' ' { url.push(c); }
-                            else { method_state = 2; }
+                    1 => { if c == ' ' { method_state = 2; }
+                            else { url.push(c); }
                     },
                     2 => { if c == '\r' { method_state = 3; }
                     }, // Ignore HTTP version for now
@@ -76,61 +76,57 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             }
             // Headers
             1 => {
-                if c == ' ' {
-                    headers_state = 1;
-                } else if c == '\r' {
-                    headers_state = 4;
-                }
                 match headers_state {
                     // Start of line
-                    0 => key.push(c),
-                    // Space encountered
-                    1 => { key.pop(); // remove the ':' and ignore space
-                           headers_state = 2; }
-                    // Get key value
-                    2 => val.push(c),
-                    3 => headers_state = 0, // ignore '/n' value
-                    // Save the key/val pair
-                    4 => {
-                        if buffer[n+1] as char == '\n' {
-                            if buffer[n+2] as char == '\r' && buffer[n+3] as char == '\n' {
-                                state = 3;
-                            } else {
-                                headers_state = 3;
-                            }
-                        } else {
-                            return Err("Malformed header")
-                        }
-                        println!("{:?}", key);
-                        println!("{:?}", val);
-                        headers.insert(key, val);
-                        key = String::new();
-                        val = String::new();
+                    0 => { if c == ' ' { headers_state = 1; }
+                            else { key.push(c); }
                     },
+                    // Space encountered // remove the ':'
+                    1 => { headers_state = 2;
+                           key.pop();
+                           val.push(c); }
+                    // Get key value
+                    2 => { if c == '\r' { headers_state = 3 }
+                            else { val.push(c); }
+                    },
+                    // got '\r' value, c is now '\n', ignore it
+                    3 => headers_state = 4,
+                    // end of line or body?
+                    4 => {
+                        if c == '\r' {
+                            headers_state = 5;
+                        } else {
+                            headers_state = 0;
+                            headers.insert(key, val);
+                            key = String::new();
+                            val = String::new();
+                            key.push(c);
+                        }
+                    },
+                    // c is now '\n' - end of headers
+                    5 => state = 2,
                     _ => {},
                 }
             },
             // Body state
             2 => {
                 if n == read_len {
-                    // Make an array of strings plit by '&'
-                    let pairs = body.split('&');
-                    // For each string, split by '=' to key/val pair
-                    for pair in pairs {
-                        let keyval:Vec<&str> = pair.split('=').collect();
-                        body_map.insert(keyval[0].to_string(),keyval[1].to_string());
-                    }
-                } else if c != '\r' && c != '\n' {
+                    body_map = parse_params(&body);
+                } else {
                     body.push(c);
                 }
             },
             _ => {},
         }
     }
+    println!("{:?}", body);
     // Unless the stream or something else errored out, Request should be guaranteed
     println!("Method = {:?}", method);
     println!("url = {:?}", url);
     for (key,val) in &headers {
+        println!("{:?}: {:?}",key,val);
+    }
+    for (key,val) in &body_map {
         println!("{:?}: {:?}",key,val);
     }
     Ok(Request {
@@ -139,6 +135,18 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
         headers: headers,
         body: None,
     })
+}
+
+fn parse_params(string: &String) -> HashMap<String, String> {
+    let mut map:HashMap<String,String> = HashMap::new();
+    // Make an array of strings plit by '&'
+    let pairs = string.split('&');
+    // For each string, split by '=' to key/val pair
+    for pair in pairs {
+        let keyval:Vec<&str> = pair.split('=').collect();
+        map.insert(keyval[0].to_string(),keyval[1].to_string());
+    }
+    map
 }
 
 pub struct Response {
