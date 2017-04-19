@@ -2,7 +2,7 @@ extern crate rustc_serialize;
 extern crate common;
 
 use common::Msg;
-use common::{Request, Response, parse_stream};
+use common::{Request, Response};
 use rustc_serialize::json;
 use std::env;
 use std::io::Write;
@@ -24,7 +24,7 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 spawn( move || {
-                    match parse_stream(&mut stream) {
+                    match Request::parse_stream(&mut stream) {
                         Ok(request) => {
                             let mut response: Response;
                             match request.url.as_ref() {
@@ -34,7 +34,7 @@ fn main() {
                             }
                             println!("Sent response: {:?}", response.to_string());
                             stream.write_all(response.to_string().as_bytes()).unwrap();
-                            stream.shutdown(Shutdown::Both).expect("shutdown call failed");
+                            stream.shutdown(Shutdown::Both).unwrap();
                         },
                         Err(e) => stream.write_all(e.as_bytes()).unwrap(),
                     }
