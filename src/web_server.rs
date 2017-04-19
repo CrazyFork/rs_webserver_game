@@ -1,14 +1,14 @@
 extern crate rustc_serialize;
 extern crate common;
 
+use common::Msg;
 use common::{Request, Response, parse_stream};
 use rustc_serialize::json;
 use std::env;
-use std::io::{Read, Write};
-use std::sync::{Arc, Mutex}; // for safely threading
+use std::io::Write;
 use std::thread::spawn; // spawning threads
 use std::collections::HashMap;
-use std::net::{TcpListener, SocketAddr, TcpStream, Shutdown};
+use std::net::{TcpListener, TcpStream, Shutdown};
 
 fn main() {
     let mut args = env::args(); // args is an iter
@@ -18,6 +18,7 @@ fn main() {
         Some(s) => s,
         None => { println!("Usage: web_server <web_ip>:<port>"); return },
     };
+
     let listener = TcpListener::bind(web_address).unwrap();
     for stream in listener.incoming().by_ref() {
         match stream {
@@ -25,7 +26,12 @@ fn main() {
                 spawn( move || {
                     match parse_stream(&mut stream) {
                         Ok(request) => {
-                            let response = handle_tictac(&request);
+                            let mut response: Response;
+                            match request.url.as_ref() {
+                                "/" => response = handle_new(&request),
+                                "/game" => response = handle_tictac(&request),
+                                _ => response = Msg::internal_error(),
+                            }
                             println!("Sent response: {:?}", response.to_string());
                             stream.write_all(response.to_string().as_bytes()).unwrap();
                             stream.shutdown(Shutdown::Both).expect("shutdown call failed");
@@ -39,9 +45,27 @@ fn main() {
     }
 }
 
+fn handle_new(request: &Request) -> Response {
+
+    let mut headers:HashMap<String, String> = HashMap::new();
+    headers.insert("Content-Type".to_string(), "text/html".to_string());
+    Response {
+        code: "HTTP/1.1 200 OK".to_string(),
+        headers: headers,
+        body: Some("TEST".as_bytes().to_vec()),
+    }
+}
+
 fn handle_tictac(request: &Request) -> Response {
     //
-    //let mut stream_to_game = TcpStream::connect("127.0.0.1:3001").unwrap();
+    let mut stream_to_game =
+        match TcpStream::connect("127.0.0.1:3001") {
+            Ok(_) => {},
+            Err(e) => println!("Game server down? {:?}",e),
+        };
+
+
+
     let mut headers:HashMap<String, String> = HashMap::new();
     headers.insert("Content-Type".to_string(), "text/html".to_string());
     Response {

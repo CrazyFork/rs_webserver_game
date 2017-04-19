@@ -26,6 +26,16 @@ pub struct Request {
     pub headers: HashMap<String, String>,
     pub body   : Option<HashMap<String, String>>, // TODO make enum so can use a HashMap or Vec
 }
+impl Request {
+    pub fn new() -> Request {
+        Request {
+            method  : String::new(),
+            url     : String::new(),
+            headers : HashMap::new(),
+            body    : None,
+        }
+    }
+}
 
 pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
@@ -35,18 +45,16 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     let mut read_len = 0;
     let mut buffer:[u8; 2048] = [0; 2048]; // limit helps avoid swamping the server. 2048 is typical
 
-    let mut method = String::new();
-    let mut url = String::new();
-    let mut headers:HashMap<String,String> = HashMap::new();
+    let mut req = Request::new();
     let mut body = String::new();
+    let mut key = String::new();
+    let mut val = String::new();
 
     let mut state = 0;
     let mut method_state = 0;
     let mut url_state = 0;
     let mut headers_state = 0;
     let mut body_state = 0;
-    let mut key = String::new();
-    let mut val = String::new();
 
     // Begin state machine - run until buffer cleared
     match stream.read(&mut buffer) {
@@ -59,16 +67,23 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             // Method
             0 => {
                 match method_state {
-                    0 => { if c == ' ' { method_state = 1; }
-                            else { method.push(c); }
+                    0 => {
+                        if c == ' ' { method_state = 1; }
+                        else { req.method.push(c); }
                     },
-                    1 => { if c == ' ' { method_state = 2; }
-                            else { url.push(c); }
+                    1 => {
+                        if c == ' ' { method_state = 2; }
+                        else { req.url.push(c); }
                     },
-                    2 => { if c == '\r' { method_state = 3; }
+                    2 => {
+                        if c == '\r' { method_state = 3; }
+                        // TODO - process url params
                     }, // Ignore HTTP version for now
-                    3 => { if c == '\n' { state = 1; }
-                            else { return Err("Method parse failed"); }
+                    3 => {
+                        if c == '\n' { state = 1; }
+                        else {
+                            return Err("Server unable to parse request method");
+                        }
                     },
                     _ => {},
                 }
@@ -77,26 +92,28 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             1 => {
                 match headers_state {
                     // Start of line
-                    0 => { if c == ' ' { headers_state = 1; }
-                            else { key.push(c); }
+                    0 => {
+                        if c == ' ' { headers_state = 1; }
+                        else { key.push(c); }
                     },
                     // Space encountered // remove the ':'
-                    1 => { headers_state = 2;
-                           key.pop();
-                           val.push(c); }
+                    1 => {
+                        headers_state = 2;
+                        key.pop();
+                        val.push(c); }
                     // Get key value
-                    2 => { if c == '\r' { headers_state = 3 }
-                            else { val.push(c); }
+                    2 => {
+                        if c == '\r' { headers_state = 3 }
+                        else { val.push(c); }
                     },
                     // got '\r' value, c is now '\n', ignore it
                     3 => headers_state = 4,
                     // end of line or body?
                     4 => {
-                        if c == '\r' {
-                            headers_state = 5;
-                        } else {
+                        if c == '\r' { headers_state = 5; }
+                        else {
                             headers_state = 0;
-                            headers.insert(key, val);
+                            req.headers.insert(key, val);
                             key = String::new();
                             val = String::new();
                             key.push(c);
@@ -115,19 +132,10 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
         }
     }
 
-    let mut body_map;
     if body.len() > 0 {
-        body_map = Some(parse_params(&body));
-    } else{
-        body_map = None;
+        req.body = Some(parse_params(&body));
     }
-
-    Ok(Request {
-        method: method,
-        url: url,
-        headers: headers,
-        body: body_map,
-    })
+    Ok(req)
 }
 
 fn parse_params(string: &String) -> HashMap<String,String> {
@@ -147,6 +155,23 @@ pub struct Response {
     pub headers: HashMap<String, String>,
     pub body   : Option<Vec<u8>>,
 }
+impl Response {
+    pub fn new() -> Response {
+        Response { code: String::new(),
+                   headers: HashMap::new(),
+                   body: None, }
+    }
+    pub fn status(&mut self, status: &str, expl: Option<&str>) {
+        let ver = "HTTP/1.1 ".to_string();
+        self.code = ver+status+" "+expl.unwrap_or("");
+    }
+    pub fn header(&mut self, key: &str, val: &str) {
+        self.headers.insert(key.to_string(),val.to_string());
+    }
+    pub fn body(&mut self, text: Vec<u8>) {
+        self.body = Some(text);
+    }
+}
 impl ToString for Response {
     fn to_string(&self) -> String {
         let line_end = String::from("\r\n");
@@ -164,42 +189,44 @@ impl ToString for Response {
     }
 }
 
-type Handler = Box<Fn(&Request) -> Response>;
-
-/// The UrlMap stores callbacks for urls in a HashMap.
-/// A callback must take a reference to a Request struct
-/// and return a Response. The Response is sent to the client
-struct UrlMap {
-    maps: HashMap<String, Handler>,
-}
-impl<> UrlMap {
-    fn new() -> UrlMap {
-        UrlMap {
-            maps: HashMap::new(),
-        }
-    }
-    fn add(&mut self, url: String, func: Handler) {
-        self.maps.insert(url, func);
-    }
-    fn handle(&self, request: &Request) -> Response {
-        match self.maps.get(&request.url) {
-            Some(c) => c(request),
-            None => Response { // safeguard response
-                        code: "HTTP/1.1 404 Not Found".to_string(),
-                        headers: HashMap::new(),
-                        body: Some("404 - Not found".as_bytes().to_vec()),
-                    },
-        }
-    }
-}
-
-mod Msg {
+pub mod Msg {
     use ::Response;
     use std::collections::HashMap;
-    
+
     pub fn connection_error() -> Response {
-        Response { code: "HTTP/1.1 666".to_string(),
-                   headers: HashMap::new(),
-                   body: Some("Connection Error".as_bytes().to_vec()), }
+        let mut res = Response::new();
+        res.status("520", Some("Unkown Error"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn ok() -> Response {
+        let mut res = Response::new();
+        res.status("200", Some("Ok"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn bad_request() -> Response {
+        let mut res = Response::new();
+        res.status("400", Some("Bad Request"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn not_found()  -> Response {
+        let mut res = Response::new();
+        res.status("404", Some("Not Found"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn internal_error() -> Response {
+        let mut res = Response::new();
+        res.status("500", Some("Internal Server Error"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn not_implemented() -> Response {
+        let mut res = Response::new();
+        res.status("501", Some("Request Not Implemented"));
+        res.header("Content-Type", "text/html");
+        res
     }
 }
