@@ -1,6 +1,6 @@
 extern crate rustc_serialize;
 
-use ::Msg::*;
+use ::Status::*;
 use std::io::{Read, Write, Bytes};
 use std::str;
 use std::sync::Arc;
@@ -237,7 +237,7 @@ impl ToString for Response {
 /// Some standard templates for responses.
 /// Most won't need to be edited except for cases
 /// where a body may be desirable, or it's an Ok.
-pub mod Msg {
+pub mod Status {
     use ::Response;
     use std::collections::HashMap;
 

@@ -1,7 +1,7 @@
 extern crate rustc_serialize;
 extern crate common;
 
-use common::Msg;
+use common::Status;
 use common::{Request, Response};
 use rustc_serialize::json;
 use std::env;
@@ -30,7 +30,7 @@ fn main() {
                             match request.url.as_ref() {
                                 "/" => response = handle_new(&request),
                                 "/game" => response = handle_tictac(&request),
-                                _ => response = Msg::internal_error(),
+                                _ => response = Status::internal_error(),
                             }
                             println!("Sent response: {:?}", response.to_string());
                             stream.write_all(response.to_string().as_bytes()).unwrap();
@@ -46,14 +46,17 @@ fn main() {
 }
 
 fn handle_new(request: &Request) -> Response {
-
-    let mut headers:HashMap<String, String> = HashMap::new();
-    headers.insert("Content-Type".to_string(), "text/html".to_string());
-    Response {
-        code: "HTTP/1.1 200 OK".to_string(),
-        headers: headers,
-        body: Some("TEST".as_bytes().to_vec()),
-    }
+    let ref user_id = match request.body.as_ref() {
+        Some(map) => map.get("user_id").unwrap(),
+        None => "123",
+    };
+    let mut response = Status::ok();
+    response.body(
+        format!("<h1>Test</h1><body>{:?}</body>", user_id)
+        .as_bytes()
+        .to_vec()
+    );
+    response
 }
 
 fn handle_tictac(request: &Request) -> Response {
@@ -64,14 +67,8 @@ fn handle_tictac(request: &Request) -> Response {
             Err(e) => println!("Game server down? {:?}",e),
         };
 
-
-
-    let mut headers:HashMap<String, String> = HashMap::new();
-    headers.insert("Content-Type".to_string(), "text/html".to_string());
-    Response {
-        code: "HTTP/1.1 200 OK".to_string(),
-        headers: headers,
-        body: Some("TEST".as_bytes().to_vec()),
-    }
+    let mut response = Status::ok();
+    response.body( "TEST".as_bytes().to_vec() );
+    response
 }
 
