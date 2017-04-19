@@ -47,6 +47,7 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
 
     let mut req = Request::new();
     let mut body = String::new();
+    let mut url = String::new();
     let mut key = String::new();
     let mut val = String::new();
 
@@ -67,20 +68,29 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
             // Method
             0 => {
                 match method_state {
+                    // Fetch method
                     0 => {
                         if c == ' ' { method_state = 1; }
                         else { req.method.push(c); }
                     },
+                    // Url string + query
                     1 => {
                         if c == ' ' { method_state = 2; }
-                        else { req.url.push(c); }
+                        else { url.push(c); }
                     },
+                    // Ignore HTTP version for now
                     2 => {
                         if c == '\r' { method_state = 3; }
-                        // TODO - process url params
-                    }, // Ignore HTTP version for now
+                    },
                     3 => {
-                        if c == '\n' { state = 1; }
+                        if c == '\n' {
+                            state = 1;
+                            let url_split:Vec<&str> = url.split('?').collect();
+                            if url_split.len() > 1 {
+                                req.body = Some(parse_params(&url_split[1].to_string()));
+                            }
+                            req.url = url_split[0].to_string();
+                        }
                         else {
                             return Err("Server unable to parse request method");
                         }
@@ -133,7 +143,14 @@ pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
     }
 
     if body.len() > 0 {
-        req.body = Some(parse_params(&body));
+        if let Some(existing) = req.body.as_mut() {
+            for (key,val) in parse_params(&body) {
+                existing.insert(key,val);
+            }
+        }
+        if req.body == None {
+            req.body = Some(parse_params(&body));
+        }
     }
     Ok(req)
 }
