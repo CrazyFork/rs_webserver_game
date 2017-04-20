@@ -34,8 +34,8 @@ fn main() {
     // Using .nth() discards all preceding elements in the iterator
     let web_address = match args.nth(1) {
         Some(s) => s,
-        None => { println!("Started on localhost:3001");
-                  "localhost:3001".to_string() },
+        None => { println!("Started on localhost:3000");
+                  "localhost:3000".to_string() },
     };
 
     let listener = TcpListener::bind(web_address).unwrap();
@@ -111,17 +111,44 @@ fn handle_tictac(request: &Request) -> Response {
                         move_to:move_to,
                         new_game:new_game
                     };
-    
-    let mut stream_to_game =
-        match TcpStream::connect("127.0.0.1:3001") {
-            Ok(_) => {},
+    let user_json = match json::encode(&user_data) {
+            Err(e) => format!("JSON conversion failed: {:?}", e),
+            Ok(o) => o,
+    };
+    let mut game:Vec<u8> = Vec::new();
+    match TcpStream::connect("127.0.0.1:3001") {
+            Ok(ref mut o) => {
+                o.write_all(user_json.as_bytes()).unwrap();
+                o.shutdown(Shutdown::Write).unwrap();
+                o.read_to_end(&mut game);
+            },
             Err(e) => println!("Game server down? {:?}",e),
-        };
+    };
+    // Parse JSON to data structure
+    let mut game_json: Vec<Vec<char>> = Vec::new();
+    match json::decode(&String::from_utf8(game).unwrap()) {
+        Err(e) => println!("Failed to receive data from game server"),
+        Ok(o) => game_json = o,
+    }
+    // Create the html table
+    let mut game_table = String::new();
+    for row in game_json {
+        game_table.push_str("<tr>");
+        for col in row {
+            game_table.push_str("<td>[");
+            game_table.push(col);
+            game_table.push_str("]</td>");
+        }
+        game_table.push_str("</tr>");
+    }
+    println!("{:?}", game_table);
+    
     
     let mut response = Status::ok();
     
     let mut body_work = String::from_utf8(GAME_PAGE.to_vec()).unwrap()
-                        .replace("{user_id}", user_id);
+                        .replace("{user_id}", user_id)
+                        .replace("{game_table}", &game_table);
     
     response.body( body_work.as_bytes().to_vec() );
     

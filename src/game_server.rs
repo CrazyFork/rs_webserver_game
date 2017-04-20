@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex}; // for safely threading
 use std::thread::spawn; // spawning threads
 use std::collections::HashMap;
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, Shutdown};
 
 fn main() {
     let mut args = env::args(); // args is an iter
@@ -22,12 +22,14 @@ fn main() {
 
     let tictac_data = Arc::new(TicTacGame::new());
 
-    for stream in listener.incoming() {
+    for stream in listener.incoming().by_ref() {
         match stream {
-            Ok(stream) => {
+            Ok(mut stream) => {
                 // closure that calls a func to operate on the stream
                 let tictac_child = tictac_data.clone();
-                spawn(|| handle_client(stream, tictac_child));
+                spawn( move || {
+                    handle_client(&mut stream, tictac_child);
+                });
             }
             Err(e) => { println!("Bad connection: {:?}", e); }
         }
@@ -67,8 +69,12 @@ impl TicTacGame {
             Some(x) => x,
             None => return Err(format!("Game for user {:?} does not exist", user_id)),
         };
-        let x = place as i32 % 3;
-        let y = place as i32 / 3;
+        let p = place.to_string().parse::<u32>().unwrap();
+        if p < 0 || p > 8 {
+            return Err(String::from("Illegal move"))
+        }
+        let x = p as i32 % 3;
+        let y = p as i32 / 3;
         let pos = board[y as usize][x as usize];
         if pos == place {
             board[y as usize][x as usize] = piece;
@@ -79,15 +85,16 @@ impl TicTacGame {
     } 
 }
 
-fn write_error(mut stream: TcpStream, msg: String) {
+fn write_error(stream: &mut TcpStream, msg: String) {
     println!("{:?}", msg); // to console
     stream.write_all(msg.as_bytes()).unwrap(); // to webserver
+    stream.shutdown(Shutdown::Write).unwrap();
 }
 
 /// Take stream and convert from JSON, perform logic, send JSON back
 /// A new game can be started by receiving;
 /// {"user_id":"number", "move_to":"-1", "new_game":true } 
-fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
+fn handle_client(stream: &mut TcpStream, game: Arc<TicTacGame>) {
     //stream.set_read_timeout(None).expect("set_read_timeout call failed");
     //stream.set_write_timeout(None).expect("set_write_timeout call failed");
     stream.set_ttl(100).expect("set_ttl call failed");
@@ -95,10 +102,9 @@ fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
     // Read the incoming stream in to a buffer for working with
     // TODO read to buffer and save length of read - Do it differennt
     let mut buffer = String::new();
-    for byte in Read::by_ref(&mut stream).bytes() {
+    for byte in Read::by_ref(stream).bytes() {
         let c = byte.unwrap() as char;
         buffer.push(c);
-        if buffer.ends_with("\r\n\r\n") { break }
     }
     
     // decode the buffer from JSON to the UserData struct
@@ -113,18 +119,29 @@ fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
     if user_data.new_game {
         game.new_game(user_data.user_id)
     }
+    // Insert user move
     match game.insert_move(user_data.user_id, user_data.move_to, 'X') {
         Ok(_) => {},
         Err(e) => { let msg = format!("User {:?}: {:?}", user_data.user_id, e);
                     write_error(stream, msg); return
                   },
     }
+    // Insert computer move
+    for cpu in 0..8 {
+        let ch = format!("{}", cpu).as_bytes()[0] as char;
+        match game.insert_move(user_data.user_id, ch, 'O') {
+            Ok(_) => break,
+            Err(e) => { },
+        }    
+    }
 
-    println!("JSON = {:?}", game.get_json(user_data.user_id));
+
+    println!("JSON = {:?}", game.get_json(user_data.user_id).unwrap());
     match game.get_json(user_data.user_id) {
         Err(e) => { let msg = format!("User {:?}: {:?}", user_data.user_id, e);
                     write_error(stream, msg); return
                   },
-        Ok(o) => stream.write_all(o.as_bytes()).unwrap(),
+        Ok(o) => { stream.write_all(o.as_bytes()).unwrap();
+                    stream.shutdown(Shutdown::Write).unwrap(); }
     }
 }

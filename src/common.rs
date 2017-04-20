@@ -20,7 +20,7 @@ pub struct UserData {
 }
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct Grid {
-    data: Vec<Vec<char>>>,
+    data: Vec<Vec<char>>
 }
 
 enum State { Method, Headers, Body }
