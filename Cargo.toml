@@ -17,3 +17,4 @@ path = "src/common.rs"
 
 [dependencies]
 rustc-serialize = "*"
+lazy_static = "*"

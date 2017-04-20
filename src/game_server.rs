@@ -93,6 +93,7 @@ fn handle_client(mut stream: TcpStream, game: Arc<TicTacGame>) {
     stream.set_ttl(100).expect("set_ttl call failed");
 
     // Read the incoming stream in to a buffer for working with
+    // TODO read to buffer and save length of read - Do it differennt
     let mut buffer = String::new();
     for byte in Read::by_ref(&mut stream).bytes() {
         let c = byte.unwrap() as char;

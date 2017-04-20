@@ -19,6 +19,10 @@ pub struct UserData {
     pub new_game: bool,
 }
 
+enum State { Method, Headers, Body }
+enum M_State { Method, Url, Http, End }
+enum H_State { Key, Space, Value, Ret, Insert, End }
+
 /// Incoming streams should be parsed to this struct
 pub struct Request {
     pub method : String,
@@ -35,7 +39,15 @@ impl Request {
             body    : None,
         }
     }
-
+    
+    /// Parse any stream of bytes (u8) in to a Request if the stream is valid
+    ///
+    /// example:
+    ///     let listener = TcpListener::bind("localhost:3000").unwrap();
+    ///     for stream in listener {
+    ///         let request = parse_stream(&mut stream).unwrap();
+    ///     }
+    ///
     pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
         //stream.set_read_timeout(None).expect("set_read_timeout call failed");
         //stream.set_write_timeout(None).expect("set_write_timeout call failed");
@@ -50,11 +62,9 @@ impl Request {
         let mut key = String::new();
         let mut val = String::new();
 
-        let mut state = 0;
-        let mut method_state = 0;
-        let mut url_state = 0;
-        let mut headers_state = 0;
-        let mut body_state = 0;
+        let mut state = State::Method;
+        let mut method_state = M_State::Method;
+        let mut headers_state = H_State::Key;
 
         // Begin state machine - run until buffer cleared
         match stream.read(&mut buffer) {
@@ -65,25 +75,31 @@ impl Request {
             let c = buffer[n] as char;
             match state {
                 // Method
-                0 => {
+                State::Method => {
                     match method_state {
                         // Fetch method
-                        0 => {
-                            if c == ' ' { method_state = 1; }
-                            else { req.method.push(c); }
+                        M_State::Method => {
+                            if c == ' ' {
+                                method_state = M_State::Url;
+                            } else {
+                                req.method.push(c);
+                            }
                         },
                         // Url string + query
-                        1 => {
-                            if c == ' ' { method_state = 2; }
-                            else { url.push(c); }
+                        M_State::Url => {
+                            if c == ' ' {
+                                method_state = M_State::Http;
+                            } else {
+                                url.push(c);
+                            }
                         },
                         // Ignore HTTP version for now
-                        2 => {
-                            if c == '\r' { method_state = 3; }
+                        M_State::Http => {
+                            if c == '\r' { method_state = M_State::End; }
                         },
-                        3 => {
+                        _ => {
                             if c == '\n' {
-                                state = 1;
+                                state = State::Headers;
                                 let url_split:Vec<&str> = url.split('?').collect();
                                 if url_split.len() > 1 {
                                     req.body = Some(parse_params(&url_split[1].to_string()));
@@ -94,59 +110,74 @@ impl Request {
                                 return Err("Server unable to parse request method");
                             }
                         },
-                        _ => {},
                     }
                 }
                 // Headers
-                1 => {
+                State::Headers => {
                     match headers_state {
                         // Start of line
-                        0 => {
-                            if c == ' ' { headers_state = 1; }
-                            else { key.push(c); }
-                        },
-                        // Space encountered // remove the ':'
-                        1 => {
-                            headers_state = 2;
-                            key.pop();
-                            val.push(c); }
-                        // Get key value
-                        2 => {
-                            if c == '\r' { headers_state = 3 }
-                            else { val.push(c); }
-                        },
-                        // got '\r' value, c is now '\n', ignore it
-                        3 => headers_state = 4,
-                        // end of line or body?
-                        4 => {
-                            if c == '\r' { headers_state = 5; }
-                            else {
-                                headers_state = 0;
-                                req.headers.insert(key, val);
-                                key = String::new();
-                                val = String::new();
+                        H_State::Key => {
+                            if c == ' ' {
+                                headers_state = H_State::Space;
+                            } else {
                                 key.push(c);
                             }
                         },
+                        // Space encountered - remove the ':'
+                        H_State::Space => {
+                            headers_state = H_State::Value;
+                            key.pop();
+                            val.push(c); } //TODO check this
+                        // Get key value
+                        H_State::Value => {
+                            if c == '\r' {
+                                headers_state = H_State::Ret
+                            } else {
+                                val.push(c);
+                            }
+                        },
+                        // got '\r' value, c is now '\n', ignore it
+                        H_State::Ret => headers_state = H_State::Insert,
+                        // end of line or body?
+                        H_State::Insert => {
+                            if c == '\r' {
+                                headers_state = H_State::End;
+                            } else {
+                                headers_state = H_State::Key;
+                                key.push(c);
+                            }
+                            req.headers.insert(key, val);
+                            key = String::new();
+                            val = String::new();
+                        },
                         // c is now '\n' - end of headers
-                        5 => state = 2,
-                        _ => {},
+                        // HTTP spec says if a body is sent with a GET request,
+                        // it should be ignored.
+                        H_State::End => {
+                            if req.method == "POST" {
+                                state = State::Body;
+                            } else {
+                                break;
+                            }
+                        },
                     }
                 },
                 // Body state
-                2 => {
+                State::Body => {
                         body.push(c);
                 },
-                _ => {},
             }
         }
 
         if body.len() > 0 {
+            // Append
             if let Some(existing) = req.body.as_mut() {
                 for (key,val) in parse_params(&body) {
                     existing.insert(key,val);
                 }
             }
+            // Or replace if None
+            // Has to be done this way as req.body is borrowed as mut above
             if req.body == None {
                 req.body = Some(parse_params(&body));
             }
@@ -155,6 +186,12 @@ impl Request {
     }
 }
 
+/// A helper function to parse params recieved in either URL
+/// or body requests
+///
+/// example:
+///    parse_params("user_id=123&place=3".to_string());
+///
 fn parse_params(string: &String) -> HashMap<String,String> {
     let mut map:HashMap<String,String> = HashMap::new();
     // Make an array of strings plit by '&'
@@ -162,7 +199,11 @@ fn parse_params(string: &String) -> HashMap<String,String> {
     // For each string, split by '=' to key/val pair
     for pair in pairs {
         let keyval:Vec<&str> = pair.split('=').collect();
-        map.insert(keyval[0].to_string(),keyval[1].to_string());
+        if keyval.len() == 2 {
+           map.insert(keyval[0].to_string(),keyval[1].to_string());
+        } else {
+            println!("Malformed params recieved");
+        }
     }
     map
 }
@@ -215,6 +256,12 @@ impl Response {
     ///
     pub fn body(&mut self, text: Vec<u8>) {
         self.body = Some(text);
+    }
+    pub fn body_len(&self) -> u32 {
+        match self.body.as_ref() {
+            Some(body) => body.len() as u32,
+            None => 0,
+        }
     }
 }
 impl ToString for Response {
