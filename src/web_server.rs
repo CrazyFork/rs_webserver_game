@@ -47,11 +47,10 @@ fn main() {
                         Ok(request) => {
                             let mut response: Response;
                             match request.url.as_ref() {
-                                "/" => response = handle_new(&request),
-                                "/game" => response = handle_tictac(&request),
-                                _ => response = Status::not_found(),
+                                "/" =>      response = handle_new(&request),
+                                "/game/" => response = handle_tictac(&request),
+                                _ =>        response = Status::not_found(),
                             }
-                            println!("Sent response: {:?}", response.to_string());
                             stream.write_all(response.to_string().as_bytes()).unwrap();
                             stream.shutdown(Shutdown::Both).unwrap();
                         },
@@ -94,9 +93,7 @@ fn handle_tictac(request: &Request) -> Response {
         None => "123", // TODO - fetch unused id from game server
     };
     let move_to = match request.body {
-        Some(ref map) => {
-            map.get("move_to").unwrap().as_bytes()[0] as char
-        },
+        Some(ref map) =>  map.get("move_to").unwrap().as_bytes()[0] as char,
         None => '_',
     };
     let new_game = match request.body {
@@ -109,7 +106,11 @@ fn handle_tictac(request: &Request) -> Response {
         None => true,
     };
     
-    let user_data = UserData { user_id:user_id.parse::<u32>().unwrap(), move_to:move_to, new_game:new_game };
+    let user_data = UserData {
+                        user_id:user_id.parse::<u32>().unwrap(),
+                        move_to:move_to,
+                        new_game:new_game
+                    };
     
     let mut stream_to_game =
         match TcpStream::connect("127.0.0.1:3001") {
@@ -118,8 +119,9 @@ fn handle_tictac(request: &Request) -> Response {
         };
     
     let mut response = Status::ok();
-    let mut body_work = String::from_utf8(GAME_PAGE.to_vec()).unwrap();
-    body_work.replace("{user_id}", user_id);
+    
+    let mut body_work = String::from_utf8(GAME_PAGE.to_vec()).unwrap()
+                        .replace("{user_id}", user_id);
     
     response.body( body_work.as_bytes().to_vec() );
     

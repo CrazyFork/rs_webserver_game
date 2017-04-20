@@ -18,6 +18,10 @@ pub struct UserData {
     pub move_to : char,
     pub new_game: bool,
 }
+#[derive(RustcEncodable, RustcDecodable, Debug)]
+pub struct Grid {
+    data: Vec<Vec<char>>>,
+}
 
 enum State { Method, Headers, Body }
 enum M_State { Method, Url, Http, End }
@@ -74,7 +78,6 @@ impl Request {
         for n in 0..read_len {
             let c = buffer[n] as char;
             match state {
-                // Method
                 State::Method => {
                     match method_state {
                         // Fetch method
@@ -85,9 +88,9 @@ impl Request {
                                 req.method.push(c);
                             }
                         },
-                        // Url string + query
                         M_State::Url => {
                             if c == ' ' {
+                                println!("Url string = {:?}", url);
                                 method_state = M_State::Http;
                             } else {
                                 url.push(c);
@@ -105,6 +108,7 @@ impl Request {
                                     req.body = Some(parse_params(&url_split[1].to_string()));
                                 }
                                 req.url = url_split[0].to_string();
+                                println!("Url string = {:?}", req.url);
                             }
                             else {
                                 return Err("Server unable to parse request method");
@@ -112,7 +116,6 @@ impl Request {
                         },
                     }
                 }
-                // Headers
                 State::Headers => {
                     match headers_state {
                         // Start of line
@@ -128,7 +131,6 @@ impl Request {
                             headers_state = H_State::Value;
                             key.pop();
                             val.push(c); } //TODO check this
-                        // Get key value
                         H_State::Value => {
                             if c == '\r' {
                                 headers_state = H_State::Ret
@@ -144,11 +146,11 @@ impl Request {
                                 headers_state = H_State::End;
                             } else {
                                 headers_state = H_State::Key;
-                                key.push(c);
                             }
                             req.headers.insert(key, val);
                             key = String::new();
                             val = String::new();
+                            key.push(c);
                         },
                         // c is now '\n' - end of headers
                         // HTTP spec says if a body is sent with a GET request,
@@ -162,7 +164,6 @@ impl Request {
                         },
                     }
                 },
-                // Body state
                 State::Body => {
                         body.push(c);
                 },
@@ -198,11 +199,12 @@ fn parse_params(string: &String) -> HashMap<String,String> {
     let pairs:Vec<&str> = string.split('&').collect();
     // For each string, split by '=' to key/val pair
     for pair in pairs {
+        println!("{:?}", pair);
         let keyval:Vec<&str> = pair.split('=').collect();
         if keyval.len() == 2 {
            map.insert(keyval[0].to_string(),keyval[1].to_string());
         } else {
-            println!("Malformed params recieved");
+            println!("Malformed params encountered");
         }
     }
     map
