@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate lazy_static;
 extern crate rustc_serialize;
 extern crate common;
@@ -6,26 +5,30 @@ extern crate common;
 use common::{Request, Response, UserData, Status};
 use rustc_serialize::json;
 use std::env;
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 use std::fs::File;
 use std::thread::spawn; // spawning threads
 use std::net::{TcpListener, TcpStream, Shutdown};
 
-lazy_static!{
-    static ref START_PAGE: Vec<u8> = {
-        let mut file = File::open("index.html").expect("index.html not found");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).expect("Error reading index.html");
-        buf
+fn read_file(name: &str) -> Result<Vec<u8>, Response> {
+    let mut file = match File::open(name) {
+        Ok(o) => o,
+        Err(e) => {
+            let mut res = Status::internal_error();
+            res.body(format!("{:?} not found: {:?}", name, e).into_bytes());
+            return Err(res);
+        }
     };
-}
-lazy_static!{
-    static ref GAME_PAGE: Vec<u8> = {
-        let mut file = File::open("game.html").expect("game.html not found");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).expect("Error reading game.html");
-        buf
-    };
+    let mut buf = Vec::new();
+    match file.read_to_end(&mut buf) {
+        Ok(_) => {}
+        Err(e) => {
+            let mut res = Status::internal_error();
+            res.body(format!("Error reading {:?}: {:?}", name, e).into_bytes());
+            return Err(res);
+        }
+    }
+    Ok(buf)
 }
 
 fn main() {
@@ -33,8 +36,10 @@ fn main() {
     // Using .nth() discards all preceding elements in the iterator
     let web_address = match args.nth(1) {
         Some(s) => s,
-        None => { println!("Started on localhost:3000");
-                  "localhost:3000".to_string() },
+        None => {
+            println!("Started on localhost:3000");
+            "localhost:3000".to_string()
+        }
     };
 
     let listener = TcpListener::bind(web_address).unwrap();
@@ -50,14 +55,16 @@ fn main() {
                                 "/game/" => response = handle_tictac(&request),
                                 _ =>        response = Status::not_found(),
                             }
-                            stream.write_all(response.to_string().as_bytes()).unwrap();
+                            stream
+                                .write_all(response.to_string().as_bytes())
+                                .unwrap();
                             stream.shutdown(Shutdown::Both).unwrap();
                         },
                         Err(e) => stream.write_all(e.as_bytes()).unwrap(),
                     }
                 });
             }
-            Err(e) => { println!("Bad connection: {:?}", e); }
+            Err(e) => println!("Bad connection: {:?}", e),
         }
     }
 }
@@ -74,12 +81,18 @@ fn handle_new(request: &Request) -> Response {
         None => "123",// TODO - fetch unused id from game server
     };
     let mut response = Status::ok();
-    
-    let body_work = String::from_utf8(START_PAGE.to_vec()).unwrap()
-                        .replace("{user_id}", user_id);
+
+    let index_file = match read_file("index.html") {
+        Ok(o) => o,
+        Err(e) => return e,
+    };
+
+    let body_work = String::from_utf8(index_file)
+        .unwrap()
+        .replace("{user_id}", user_id);
 
     response.body(body_work.as_bytes().to_vec());
-    
+
     let body_len = &response.body_len().to_string();
     response.header("Content-Length", body_len);
     response
@@ -105,26 +118,26 @@ fn handle_tictac(request: &Request) -> Response {
                 "true" => true,
                 _ => false,
             }
-        },
+        }
         Err(_) => true, // Maybe shouldn't ignore the error, but the other fields are fine
     };
-    
+
     let user_data = UserData {
-                        user_id: user_id.parse::<u32>().unwrap(),
-                        move_to: move_to,
-                        new_game:new_game
-                    };
-    let user_json = match json::encode(&user_data) {
-            Err(e) => format!("JSON conversion failed: {:?}", e),
-            Ok(o) => {
-                if move_to == 'n' {
-                    "1:".to_string()+&o
-                } else {
-                    "0:".to_string()+&o
-                }
-            }
+        user_id: user_id.parse::<u32>().unwrap(),
+        move_to: move_to,
+        new_game: new_game,
     };
-    
+    let user_json = match json::encode(&user_data) {
+        Err(e) => format!("JSON conversion failed: {:?}", e),
+        Ok(o) => {
+            if move_to == 'n' {
+                "1:".to_string() + &o
+            } else {
+                "0:".to_string() + &o
+            }
+        }
+    };
+
     // Send JSON to game_server and parse recd JSON to data structure (vec)
     let game = match rw_user_data(&user_json, "localhost:3001") {
         Ok(game) => {
@@ -132,35 +145,40 @@ fn handle_tictac(request: &Request) -> Response {
                 Err(_) => return Status::internal_error(),
                 Ok(o) => o,
             }
-        },
+        }
         Err(_) => return Status::internal_error(),
     };
-    
+
     // Create the html table
     let game_table = create_table(game);
-    
+
+    let game_file = match read_file("game.html") {
+        Ok(o) => o,
+        Err(e) => return e,
+    };
     let mut response = Status::ok();
-    let body_work = String::from_utf8(GAME_PAGE.to_vec()).unwrap()
-                        .replace("{user_id}", user_id)
-                        .replace("{game_table}", &game_table);
-    
-    response.body( body_work.as_bytes().to_vec() );
-    
+    let body_work = String::from_utf8(game_file)
+        .unwrap()
+        .replace("{user_id}", user_id)
+        .replace("{game_table}", &game_table);
+
+    response.body(body_work.into_bytes());
+
     let body_len = &response.body_len().to_string();
     response.header("Content-Length", body_len);
     response
 }
 
 fn rw_user_data(user_data: &str, addr: &str) -> Result<Vec<u8>, String> {
-    let mut game:Vec<u8> = Vec::new();
+    let mut game: Vec<u8> = Vec::new();
     match TcpStream::connect(addr) {
-            Ok(ref mut o) => {
-                o.write_all(user_data.as_bytes()).unwrap();
-                o.shutdown(Shutdown::Write).unwrap();
-                o.read_to_end(&mut game).unwrap();
-                return Ok(game)
-            },
-            Err(e) => return Err(format!("Game server down? {:?}",e)),
+        Ok(ref mut o) => {
+            o.write_all(user_data.as_bytes()).unwrap();
+            o.shutdown(Shutdown::Write).unwrap();
+            o.read_to_end(&mut game).unwrap();
+            return Ok(game);
+        }
+        Err(e) => return Err(format!("Game server down? {:?}", e)),
     };
 }
 
@@ -178,4 +196,3 @@ fn create_table(game: Vec<Vec<char>>) -> String {
     println!("{:?}", game_table);
     game_table
 }
-
