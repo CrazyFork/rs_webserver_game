@@ -1,12 +1,9 @@
 extern crate rustc_serialize;
 
-use ::Status::*;
-use std::io::{Read, Write, Bytes};
+use std::io::Read;
 use std::str;
-use std::sync::Arc;
-use std::thread::{spawn, JoinHandle};
 use std::collections::HashMap;
-use std::net::{TcpListener, SocketAddr, TcpStream};
+use std::net::TcpStream;
 
 // This is a library consisting of all data structs and/or
 // funcitonality shared between the web and game servers
@@ -24,8 +21,8 @@ pub struct Grid {
 }
 
 enum State { Method, Headers, Body }
-enum M_State { Method, Url, Http, End }
-enum H_State { Key, Space, Value, Ret, Insert, End }
+enum MState { Method, Url, Http, End }
+enum HState { Key, Space, Value, Ret, Insert, End }
 
 /// Incoming streams should be parsed to this struct
 pub struct Request {
@@ -70,12 +67,8 @@ impl Request {
     ///         let request = parse_stream(&mut stream).unwrap();
     ///     }
     ///
-    pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &'static str> {
-        //stream.set_read_timeout(None).expect("set_read_timeout call failed");
-        //stream.set_write_timeout(None).expect("set_write_timeout call failed");
-        stream.set_ttl(100).expect("set_ttl call failed");
+    pub fn parse_stream(stream: &mut TcpStream) -> Result<Request, &str> {
 
-        let mut read_len = 0;
         let mut buffer:[u8; 2048] = [0; 2048]; // limit helps avoid swamping the server. 2048 is typical
 
         let mut req = Request::new();
@@ -85,38 +78,38 @@ impl Request {
         let mut val = String::new();
 
         let mut state = State::Method;
-        let mut method_state = M_State::Method;
-        let mut headers_state = H_State::Key;
+        let mut method_state = MState::Method;
+        let mut headers_state = HState::Key;
 
         // Begin state machine - run until buffer cleared
-        match stream.read(&mut buffer) {
-            Ok(len) => read_len = len,
-            Err(e) => {}
-        }
+        let read_len = match stream.read(&mut buffer) {
+            Ok(len) => len,
+            Err(_) => return Err("Error reading stream"),
+        };
         for n in 0..read_len {
             let c = buffer[n] as char;
             match state {
                 State::Method => {
                     match method_state {
                         // Fetch method
-                        M_State::Method => {
+                        MState::Method => {
                             if c == ' ' {
-                                method_state = M_State::Url;
+                                method_state = MState::Url;
                             } else {
                                 req.method.push(c);
                             }
                         },
-                        M_State::Url => {
+                        MState::Url => {
                             if c == ' ' {
                                 println!("Url string = {:?}", url);
-                                method_state = M_State::Http;
+                                method_state = MState::Http;
                             } else {
                                 url.push(c);
                             }
                         },
                         // Ignore HTTP version for now
-                        M_State::Http => {
-                            if c == '\r' { method_state = M_State::End; }
+                        MState::Http => {
+                            if c == '\r' { method_state = MState::End; }
                         },
                         _ => {
                             if c == '\n' {
@@ -137,33 +130,33 @@ impl Request {
                 State::Headers => {
                     match headers_state {
                         // Start of line
-                        H_State::Key => {
+                        HState::Key => {
                             if c == ' ' {
-                                headers_state = H_State::Space;
+                                headers_state = HState::Space;
                             } else {
                                 key.push(c);
                             }
                         },
                         // Space encountered - remove the ':'
-                        H_State::Space => {
-                            headers_state = H_State::Value;
+                        HState::Space => {
+                            headers_state = HState::Value;
                             key.pop();
                             val.push(c); } //TODO check this
-                        H_State::Value => {
+                        HState::Value => {
                             if c == '\r' {
-                                headers_state = H_State::Ret
+                                headers_state = HState::Ret
                             } else {
                                 val.push(c);
                             }
                         },
                         // got '\r' value, c is now '\n', ignore it
-                        H_State::Ret => headers_state = H_State::Insert,
+                        HState::Ret => headers_state = HState::Insert,
                         // end of line or body?
-                        H_State::Insert => {
+                        HState::Insert => {
                             if c == '\r' {
-                                headers_state = H_State::End;
+                                headers_state = HState::End;
                             } else {
-                                headers_state = H_State::Key;
+                                headers_state = HState::Key;
                             }
                             req.headers.insert(key, val);
                             key = String::new();
@@ -173,7 +166,7 @@ impl Request {
                         // c is now '\n' - end of headers
                         // HTTP spec says if a body is sent with a GET request,
                         // it should be ignored.
-                        H_State::End => {
+                        HState::End => {
                             if req.method == "POST" {
                                 state = State::Body;
                             } else {
@@ -306,7 +299,6 @@ impl ToString for Response {
 /// where a body may be desirable, or it's an Ok.
 pub mod Status {
     use ::Response;
-    use std::collections::HashMap;
     
     pub fn faulty_query(text: &str) -> Response {
         let mut res = Response::new();

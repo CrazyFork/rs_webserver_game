@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex}; // for safely threading
 use std::thread::spawn; // spawning threads
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream, Shutdown};
+use std::time::Duration;
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:3001").unwrap();
@@ -18,6 +19,10 @@ fn main() {
     for stream in listener.incoming().by_ref() {
         match stream {
             Ok(mut stream) => {
+                let fives = Duration::from_secs(5);
+                stream.set_read_timeout(Some(fives)).expect("set_read_timeout call failed");
+                stream.set_write_timeout(Some(fives)).expect("set_write_timeout call failed");
+                stream.set_ttl(100).expect("set_ttl call failed");
                 // closure that calls a func to operate on the stream
                 let tictac_child = tictac_data.clone();
                 spawn(move || { handle_client(&mut stream, tictac_child); });
@@ -93,10 +98,6 @@ fn write_error(stream: &mut TcpStream, msg: String) {
 /// A new game can be started by receiving;
 /// {"user_id":"number", "move_to":"-1", "new_game":true }
 fn handle_client(stream: &mut TcpStream, game: Arc<TicTacGame>) {
-    //stream.set_read_timeout(None).expect("set_read_timeout call failed");
-    //stream.set_write_timeout(None).expect("set_write_timeout call failed");
-    stream.set_ttl(100).expect("set_ttl call failed");
-
     // Read the incoming stream in to a buffer for working with
     // TODO read to buffer and save length of read - Do it differennt
     let mut buffer = String::new();
