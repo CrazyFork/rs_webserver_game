@@ -4,7 +4,6 @@ extern crate common;
 
 use ::common::UserData;
 use rustc_serialize::json;
-use std::env;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex}; // for safely threading
 use std::thread::spawn; // spawning threads
@@ -12,12 +11,6 @@ use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream, Shutdown};
 
 fn main() {
-    let mut args = env::args(); // args is an iter
-
-    /*let address = match args.nth(1) {
-        Some(s) => s,
-        None => { println!("Usage: game_server <ip>:<port>"); return },
-    };*/
     let listener = TcpListener::bind("127.0.0.1:3001").unwrap();
 
     let tictac_data = Arc::new(TicTacGame::new());
@@ -70,7 +63,7 @@ impl TicTacGame {
             None => return Err(format!("Game for user {:?} does not exist", user_id)),
         };
         let p = place.to_string().parse::<u32>().unwrap();
-        if p < 0 || p > 8 {
+        if p > 8 { // not possible for u32 to be < 0
             return Err(String::from("Illegal move"))
         }
         let x = p as i32 % 3;
@@ -87,8 +80,8 @@ impl TicTacGame {
 
 fn write_error(stream: &mut TcpStream, msg: String) {
     println!("{:?}", msg); // to console
-    stream.write_all(msg.as_bytes()).unwrap(); // to webserver
-    stream.shutdown(Shutdown::Write).unwrap();
+    stream.write_all(msg.as_bytes()).unwrap_or(println!("Failed to write to stream")); // to webserver
+    stream.shutdown(Shutdown::Write).unwrap_or(println!("Stream closed before write?"));
 }
 
 /// Take stream and convert from JSON, perform logic, send JSON back
@@ -103,22 +96,46 @@ fn handle_client(stream: &mut TcpStream, game: Arc<TicTacGame>) {
     // TODO read to buffer and save length of read - Do it differennt
     let mut buffer = String::new();
     for byte in Read::by_ref(stream).bytes() {
-        let c = byte.unwrap() as char;
-        buffer.push(c);
+        buffer.push(byte.unwrap() as char);
     }
+    
+    let split:Vec<&str> = buffer.splitn(2, ':').collect();
+    if split.len() < 2 {
+        write_error(stream, format!("Invalid JSON received"));
+        return
+    }
+    let code = split[0].parse::<u32>().unwrap();
+    let buffer = split[1];
     
     // decode the buffer from JSON to the UserData struct
     let user_data: UserData;
     match json::decode(&buffer) {
-        Err(e) => { let msg = format!("Invalid JSON received: {:?}", e);
-                    write_error(stream, msg); return
-                  },
+        Err(e) => {
+            write_error(stream, format!("Invalid JSON received: {:?}", e));
+            return
+        },
         Ok(o) => user_data = o,
     }
 
     if user_data.new_game {
         game.new_game(user_data.user_id)
     }
+    
+    // Return just the JSON without making a move - move can be anything
+    if code == 1 {
+        match game.get_json(user_data.user_id) {
+            Err(e) => {
+                let msg = format!("User {:?}: {:?}", user_data.user_id, e);
+                write_error(stream, msg); return
+            },
+            Ok(o) => {
+                stream.write_all(o.as_bytes()).unwrap();
+                stream.shutdown(Shutdown::Write).unwrap();
+                return
+            }
+        }
+    }
+    
     // Insert user move
     match game.insert_move(user_data.user_id, user_data.move_to, 'X') {
         Ok(_) => {},
@@ -131,17 +148,20 @@ fn handle_client(stream: &mut TcpStream, game: Arc<TicTacGame>) {
         let ch = format!("{}", cpu).as_bytes()[0] as char;
         match game.insert_move(user_data.user_id, ch, 'O') {
             Ok(_) => break,
-            Err(e) => { },
+            Err(_) => { },
         }    
     }
 
 
     println!("JSON = {:?}", game.get_json(user_data.user_id).unwrap());
     match game.get_json(user_data.user_id) {
-        Err(e) => { let msg = format!("User {:?}: {:?}", user_data.user_id, e);
-                    write_error(stream, msg); return
-                  },
-        Ok(o) => { stream.write_all(o.as_bytes()).unwrap();
-                    stream.shutdown(Shutdown::Write).unwrap(); }
+        Err(e) => {
+            let msg = format!("User {:?}: {:?}", user_data.user_id, e);
+            write_error(stream, msg); return
+        },
+        Ok(o) => {
+            stream.write_all(o.as_bytes()).unwrap();
+            stream.shutdown(Shutdown::Write).unwrap();
+        }
     }
 }

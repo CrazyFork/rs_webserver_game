@@ -43,7 +43,25 @@ impl Request {
             body    : None,
         }
     }
-    
+    ///
+    pub fn get_param(&self, param: &str) -> Result<&String, Response> {
+        match self.body {
+            Some(ref map) => {
+                match map.get(param) {
+                    Some(p) => {
+                        if p.is_empty() {
+                            return Err(Status::faulty_query(&format!("{:?} was empty", param)))
+                        }
+                        return Ok(p)
+                    },
+                    None => return Err(Status::faulty_query(&format!("No {:?} submitted in query", param)))
+                };
+            },
+            None => {
+                return Err(Status::faulty_query("No data submitted in query"))
+            },
+        };
+    }
     /// Parse any stream of bytes (u8) in to a Request if the stream is valid
     ///
     /// example:
@@ -289,11 +307,12 @@ impl ToString for Response {
 pub mod Status {
     use ::Response;
     use std::collections::HashMap;
-
-    pub fn connection_error() -> Response {
+    
+    pub fn faulty_query(text: &str) -> Response {
         let mut res = Response::new();
-        res.status("520", Some("Unkown Error"));
+        res.status("422", Some("Unprocessable Entity"));
         res.header("Content-Type", "text/html");
+        res.body(text.as_bytes().to_vec());
         res
     }
     pub fn ok() -> Response {
@@ -323,6 +342,12 @@ pub mod Status {
     pub fn not_implemented() -> Response {
         let mut res = Response::new();
         res.status("501", Some("Request Not Implemented"));
+        res.header("Content-Type", "text/html");
+        res
+    }
+    pub fn unkown_error() -> Response {
+        let mut res = Response::new();
+        res.status("520", Some("Unkown Error"));
         res.header("Content-Type", "text/html");
         res
     }
