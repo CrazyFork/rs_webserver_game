@@ -6,14 +6,17 @@ authors = ["Luke Jones <luke.nukem.jones@gmail.com>"]
 [[bin]]
 name = "web_server"
 path = "src/web_server.rs"
+doc = true
 
 [[bin]]
 name = "game_server"
 path = "src/game_server.rs"
+doc = true
 
 [lib]
 name = "common"
 path = "src/common.rs"
+doc = true
 
 [dependencies]
 rustc-serialize = "*"
