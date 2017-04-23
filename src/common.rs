@@ -32,6 +32,7 @@ pub struct Request {
     pub body   : Option<HashMap<String, String>>, // TODO make enum so can use a HashMap or Vec
 }
 impl Request {
+    /// Produce a blank Request
     pub fn new() -> Request {
         Request {
             method  : String::new(),
@@ -40,6 +41,8 @@ impl Request {
             body    : None,
         }
     }
+    /// fetch any param in the request body, return either a ref to the
+    /// string, or a Response that can be used if desired.
     ///
     pub fn get_param(&self, param: &str) -> Result<&String, Response> {
         match self.body {
@@ -82,12 +85,14 @@ impl Request {
         let mut headers_state = HState::Key;
 
         // Begin state machine - run until buffer cleared
+        // The read function fills the provided buffer (and won't overrun), then
+        // returns the length read
         let read_len = match stream.read(&mut buffer) {
             Ok(len) => len,
             Err(_) => return Err("Error reading stream"),
         };
         for n in 0..read_len {
-            let c = buffer[n] as char;
+            let c = buffer[n] as char; // convert byte to char
             match state {
                 State::Method => {
                     match method_state {

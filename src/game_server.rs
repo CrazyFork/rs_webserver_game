@@ -1,4 +1,3 @@
-// Test with echo '{"user_id":"223344", "move_to":"4", "new_game":true }' > /dev/tcp/localhost/3001
 extern crate rustc_serialize;
 extern crate common;
 
@@ -11,11 +10,18 @@ use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::time::Duration;
 
+/// A small note on the use of .unwrap() in this source
+/// It /should/ be changed to something to handle either None/Err
+/// safely as is done in the web_server,
+/// but for the purposes of the assignment, it works well enough to
+/// demonstrate.
+
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:3001").unwrap();
 
     let tictac_data = Arc::new(TicTacGame::new());
 
+    // This for loop operates the same as in web_server
     for stream in listener.incoming().by_ref() {
         match stream {
             Ok(mut stream) => {
@@ -37,6 +43,8 @@ fn main() {
 struct TicTacBoard {
     board: HashMap<u32, Vec<Vec<char>>>,
 }
+
+/// Create this struct containing the TicTacBoard struct within a mutex lock
 struct TicTacGame {
     data: Mutex<TicTacBoard>,
 }
@@ -51,10 +59,14 @@ impl TicTacGame {
         let array = vec![vec!['0', '1', '2'], // row 0, x=0,1,2
                          vec!['3', '4', '5'], // row 1
                          vec!['6', '7', '8']]; // row 2
+        // To safely read and write from the Mutex it must be locked
         let mut guard = self.data.lock().unwrap(); // critical section begins
         guard.board.insert(user_id, array); // guard is dropped automatically at end of scope
-    }
+    } // The scope ends here
+    
+    /// A simple helper function to give us the JSON string without problems
     fn get_json(&self, user_id: u32) -> Result<String, String> {
+        // Critical section begins
         let guard = self.data.lock().unwrap();
         let data = guard.board.get(&user_id).unwrap().to_vec();
         match json::encode(&data) {
@@ -89,6 +101,9 @@ impl TicTacGame {
 
 fn write_error(stream: &mut TcpStream, msg: String) {
     println!("{:?}", msg); // to console
+    // The use of `.unwrap_or()` here is a suitable substitute for a match
+    // statement or other types of result handling as we only care about
+    // whether the operation was successful or not.
     stream
         .write_all(msg.as_bytes())
         .unwrap_or(println!("Failed to write to stream")); // to webserver
@@ -100,6 +115,10 @@ fn write_error(stream: &mut TcpStream, msg: String) {
 /// Take stream and convert from JSON, perform logic, send JSON back
 /// A new game can be started by receiving;
 /// {"user_id":"number", "move_to":"-1", "new_game":true }
+///
+/// This block is too long for my liking, it really should be pared
+/// down to more general functions.
+///
 fn handle_client(stream: &mut TcpStream, game: Arc<TicTacGame>) {
     // Read the incoming stream in to a buffer for working with
     // TODO read to buffer and save length of read - Do it differennt
