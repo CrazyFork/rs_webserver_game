@@ -1,0 +1,43 @@
+To build this, please see either https://www.rustup.rs/ or https://www.rust-lang.org/en-US/install.html for installation of the Rust compiler (multiplatform).
+
+To build the source code, use;
+cargo build --all --release
+The binaries will be located in ./target/release, web_server, and game_server. The index.html and game.html will need to be copied to the same location.
+
+Alternatively run;
+cargo run --bin web_server &
+cargo run --bin game_server
+
+The web_server requires the game_server to be running, and connects to it on port 3001
+
+*Notes*
+
+The cpu only iterates through the available moves and inserts the first valid one, I felt this was sufficient for demonstration. The logic is performed on the game server.
+
+There is no End Game or Scores displayed - This would be easy enough to add via the tictac_handler or by adding extra data in communication between the web_server and game_server. Again, I felt what is done is sufficient for demonstration (this was a lot of work! :) ).
+Ideally I would add an extra field to the JSON sent from the game_server that contains "winner:none||X||O", and the web_server would read this and display the appropiate page.
+
+Why did I use Rust?
+
+- It is the language I am most comfortable in, much more so than Python, Java (especially!), Haskell (it borrows some Haskell style idioms though), or even C/C++.
+
+- It has excellent memory safety properties, the compiler makes it almost impossible to do such things as "free after use", and as a result it also has excellent (safe) concurrency capabilities.
+
+- The return an Option or Result paradigm makes many things trivial to implement, such as;
+    let web_address = match args.nth(1) {
+        Some(s) => s,
+        None => {
+            println!("Started on localhost:3000");
+            "localhost:3000".to_string()
+        }
+    };
+This matches a pattern (on the left of => ), in this case, if the user provided an argument to web_server (eg, web_server localhost:666), then that would be contained in the "Option" returned from .nth(), a function that returns either Some(T) or None depending on if that index exists or not.
+Makes it completely safe! No out of bounds etc.
+In the above example, Option is an enum, defined as;
+    pub enum Option<T> {
+        None,
+        Some(T),
+    }
+where T is some type.
+
+- It is also fast, I like fast.

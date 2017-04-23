@@ -68,7 +68,10 @@ impl TicTacGame {
             Some(x) => x,
             None => return Err(format!("Game for user {:?} does not exist", user_id)),
         };
-        let p = place.to_string().parse::<u32>().unwrap();
+        let p = match place.to_string().parse::<u32>() {
+            Ok(o) => o,
+            Err(_) => return Err(String::from("Invalid input")),
+        };
         if p > 8 {
             return Err(String::from("Illegal move"));
         }
