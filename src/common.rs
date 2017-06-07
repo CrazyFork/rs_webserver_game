@@ -188,7 +188,7 @@ impl Request {
 
         if body.len() > 0 {
             // Append
-            if let Some(existing) = req.body.as_mut() {
+            if let Some(existing) = req.body.as_mut() { // Option[T].as_mut()->Option(&mut T)
                 for (key,val) in parse_params(&body) {
                     existing.insert(key,val);
                 }

@@ -1,3 +1,17 @@
+# this repo demos
+
+* writing a simple http web server from scratch.
+* rust threading with Arc & Mutex
+* tcp stream with rust
+* use src/common.rs as third lib instead of module
+
+
+
+
+
+
+
+
 To build this, please see either https://www.rustup.rs/ or https://www.rust-lang.org/en-US/install.html for installation of the Rust compiler (multiplatform).
 
 To build the source code, use;
@@ -5,8 +19,7 @@ cargo build --all --release
 The binaries will be located in ./target/release, web_server, and game_server. The index.html and game.html will need to be copied to the same location.
 
 Alternatively run;
-cargo run --bin web_server &
-cargo run --bin game_server
+cargo run --bin web_server & cargo run --bin game_server
 
 The web_server requires the game_server to be running, and connects to it on port 3001
 

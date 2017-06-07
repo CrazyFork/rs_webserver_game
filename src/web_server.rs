@@ -112,7 +112,7 @@ fn main() {
 /// request then one is randomly generated and inserted
 /// in to the response.
 fn handle_new(request: &Request) -> Response {
-    let ref user_id = match request.body.as_ref() {
+    let ref user_id = match request.body.as_ref() { // Option<T>.as_ref()->Option<&T>
         Some(map) => map.get("user_id").unwrap(),
         None => "123",// TODO - fetch unused id from game server
     };
