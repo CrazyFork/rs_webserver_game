@@ -3,7 +3,7 @@
 * writing a simple http web server from scratch.
 * rust threading with Arc & Mutex
 * tcp stream with rust
-* use src/common.rs as third lib instead of module
+* use src/common.rs as indepent lib instead of module
 
 
 
